@@ -1,7 +1,11 @@
 [project]
 name = "rfm95-receiver"
 version = "0.1.0"
-description = "Add your description here"
+description = "Yard.net RFM95 receiver for LoRaWAN devices"
+authors = [
+    { name = "Tom-Camp", email = "tomcamp@protonmail.ch" },
+]
+license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -9,6 +13,7 @@ dependencies = [
     "adafruit-circuitpython-rfm9x",
     "httpx",
     "loguru",
+    "msgpack",
     "pydantic-settings",
     "tenacity",
 ]

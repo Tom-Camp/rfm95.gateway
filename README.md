@@ -29,3 +29,10 @@ server.
 The receiver listens for LoRa packets on the 915MHz frequency. When a packet is received, it decodes the message and 
 sends it to the API server. In order to keep the LoRa packet size small, the message includes a shortened device ID. The
 receiver uses a mapping of shortened IDs to full device IDs to relay the correct information to the server.
+
+## Contributors
+
+- [Tom Camp](https://github.com/Tom-Camp)
+
+## License
+This project is licensed under the Aferro General Public License v3.0 (AGPL-3.0). See the [LICENSE](LICENSE) file for details.

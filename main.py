@@ -1,6 +1,6 @@
-import struct
 import sys
 import time
+
 from pathlib import Path
 
 import adafruit_rfm9x
@@ -8,13 +8,13 @@ import board
 import busio
 import digitalio
 import httpx
-from loguru import logger
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from tenacity import retry, reraise, stop_after_attempt, wait_exponential
+import msgpack
 
-# Packet layout: uint8 device_num | int16 temp×10 | uint16 moisture  (5 bytes)
-PACKET_FORMAT = ">BhH"
-PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
+from loguru import logger
+from msgpack.exceptions import ExtraData, FormatError, OutOfData, UnpackValueError
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 POLL_INTERVAL = 0.1
 
 
@@ -33,13 +33,6 @@ class Settings(BaseSettings):
                 f"set DEVICE_{device_num}_DEVICE_ID and DEVICE_{device_num}_API_KEY in .env"
             )
         return device_id, api_key
-
-
-def decode_packet(raw: bytes) -> tuple[int, float, int]:
-    if len(raw) < PACKET_SIZE:
-        raise ValueError(f"Packet too short: {len(raw)} bytes (need {PACKET_SIZE})")
-    device_num, temp_raw, moisture = struct.unpack_from(PACKET_FORMAT, raw)
-    return device_num, temp_raw / 10.0, moisture
 
 
 def _log_retry(retry_state) -> None:
@@ -81,19 +74,24 @@ class LoraReceiver:
             self.http.close()
 
     def _poll(self) -> None:
-        packet = self.radio.receive(with_ack=False)
+        packet = self.radio.receive(with_ack=True)
         if packet is None:
             return
 
         try:
-            device_num, temp, moisture = decode_packet(bytes(packet))
-        except ValueError as exc:
+            packet_data = msgpack.unpackb(bytes(packet), raw=False)
+        except (ExtraData, FormatError, OutOfData, UnpackValueError) as exc:
             logger.warning(f"Bad packet: {exc}")
             return
 
-        logger.info(
-            f"device={device_num} temp={temp:.1f}°C moisture={moisture} rssi={self.radio.last_rssi}dBm"
-        )
+        device_num: int = packet_data.get("device_num")
+        data: dict = packet_data.get("data", {})
+
+        if device_num is None:
+            logger.warning("Packet missing device_num, dropping")
+            return
+
+        logger.info(f"device={device_num} rssi={self.radio.last_rssi}dBm")
 
         try:
             device_id, api_key = self.settings.get_credentials(device_num)
@@ -102,7 +100,7 @@ class LoraReceiver:
             return
 
         try:
-            self._post(temp, moisture, device_id, api_key)
+            self._post(data, device_id, api_key)
         except Exception as exc:
             logger.error(f"POST failed after retries: {exc}")
 
@@ -112,10 +110,10 @@ class LoraReceiver:
         before_sleep=_log_retry,
         reraise=True,
     )
-    def _post(self, temp: float, moisture: int, device_id: str, api_key: str) -> None:
+    def _post(self, data: dict, device_id: str, api_key: str) -> None:
         response = self.http.post(
             self.settings.api_url,
-            json={"temperature": temp, "moisture": moisture},
+            json=data,
             headers={"X-API-Key": api_key, "X-Device-Id": device_id},
         )
         response.raise_for_status()
