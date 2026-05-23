@@ -15,5 +15,6 @@ dependencies = [
     "loguru",
     "msgpack>=1.1.2",
     "pydantic-settings",
+    "rpi-gpio>=0.7.1",
     "tenacity",
 ]
