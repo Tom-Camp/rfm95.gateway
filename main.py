@@ -11,28 +11,11 @@ import httpx
 import msgpack
 
 from loguru import logger
-from msgpack.exceptions import ExtraData, FormatError, OutOfData, UnpackValueError
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from msgpack.exceptions import ExtraData, FormatError, OutOfData
+from settings import settings
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 POLL_INTERVAL = 0.1
-
-
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="allow")
-
-    api_url: str
-
-    def get_credentials(self, device_num: int) -> tuple[str, str]:
-        extras = self.model_extra or {}
-        device_id = extras.get(f"device_{device_num}_device_id", "")
-        api_key = extras.get(f"device_{device_num}_api_key", "")
-        if not device_id or not api_key:
-            raise ValueError(
-                f"No credentials for device {device_num} — "
-                f"set DEVICE_{device_num}_DEVICE_ID and DEVICE_{device_num}_API_KEY in .env"
-            )
-        return device_id, api_key
 
 
 def _log_retry(retry_state) -> None:
@@ -42,15 +25,14 @@ def _log_retry(retry_state) -> None:
 
 
 class LoraReceiver:
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
+    def __init__(self) -> None:
         self.http = httpx.Client(timeout=10.0)
 
         cs = digitalio.DigitalInOut(board.CE1)
         reset = digitalio.DigitalInOut(board.D25)
         spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
 
-        self.radio = adafruit_rfm9x.RFM9x(spi, cs, reset, 915.0)
+        self.radio = adafruit_rfm9x.RFM9x(spi, cs, reset, 915)
         self.radio.tx_power = 23
         self.radio.spreading_factor = 7
         self.radio.signal_bandwidth = 125000
@@ -65,7 +47,7 @@ class LoraReceiver:
                 try:
                     self._poll()
                     time.sleep(POLL_INTERVAL)
-                except Exception as exc:
+                except RuntimeError as exc:
                     logger.error(f"Poll error: {exc}")
                     time.sleep(1.0)
         except KeyboardInterrupt:
@@ -80,7 +62,7 @@ class LoraReceiver:
 
         try:
             packet_data = msgpack.unpackb(bytes(packet), raw=False)
-        except (ExtraData, FormatError, OutOfData, UnpackValueError) as exc:
+        except (ExtraData, FormatError, OutOfData, ValueError) as exc:
             logger.warning(f"Bad packet: {exc}")
             return
 
@@ -94,14 +76,14 @@ class LoraReceiver:
         logger.info(f"device={device_num} rssi={self.radio.last_rssi}dBm")
 
         try:
-            device_id, api_key = self.settings.get_credentials(device_num)
+            device_id, api_key = settings.get_credentials(device_num)
         except ValueError as exc:
             logger.error(str(exc))
             return
 
         try:
             self._post(data, device_id, api_key)
-        except Exception as exc:
+        except httpx.HTTPError as exc:
             logger.error(f"POST failed after retries: {exc}")
 
     @retry(
@@ -128,8 +110,7 @@ def main() -> None:
     logger.add(log_dir / "receiver_errors.log", level="ERROR", rotation="500 MB", retention="30 days")
     logger.add(sys.stderr, level="INFO")
 
-    settings = Settings()
-    LoraReceiver(settings).run()
+    LoraReceiver().run()
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ dependencies = [
     "adafruit-circuitpython-rfm9x",
     "httpx",
     "loguru",
-    "msgpack",
+    "msgpack>=1.1.2",
     "pydantic-settings",
     "tenacity",
 ]

@@ -368,7 +368,7 @@ requires-dist = [
     { name = "adafruit-circuitpython-rfm9x" },
     { name = "httpx" },
     { name = "loguru" },
-    { name = "msgpack" },
+    { name = "msgpack", specifier = ">=1.1.2" },
     { name = "pydantic-settings" },
     { name = "tenacity" },
 ]
