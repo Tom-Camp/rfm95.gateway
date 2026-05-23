@@ -94,7 +94,7 @@ class LoraReceiver:
     )
     def _post(self, data: dict, device_id: str, api_key: str) -> None:
         response = self.http.post(
-            self.settings.api_url,
+            settings.api_url,
             json=data,
             headers={"X-API-Key": api_key, "X-Device-Id": device_id},
         )
